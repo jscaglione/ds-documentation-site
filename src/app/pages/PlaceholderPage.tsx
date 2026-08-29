@@ -1,4 +1,6 @@
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
+import { StorybookEmbedSection } from "../components/StorybookEmbedSection";
+import { isComponentDocsPath } from "../lib/storybook";
 
 interface PlaceholderPageProps {
   title: string;
@@ -14,6 +16,8 @@ const SUGGESTIONS = [
 ];
 
 export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
+  const { pathname } = useLocation();
+
   return (
     <div>
       {/* Page header */}
@@ -61,6 +65,12 @@ export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
           {description}
         </p>
       </div>
+
+      {isComponentDocsPath(pathname) && (
+        <div className="mb-12">
+          <StorybookEmbedSection />
+        </div>
+      )}
 
       {/* Placeholder content */}
       <div

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured, Profile, UserRole } from "./supabase";
-import type { AddedNavItem, FigmaBlock } from "../contexts/EditModeContext";
+import type { AddedNavItem, FigmaBlock, StorybookBlock } from "../contexts/EditModeContext";
 
 // ─── Edge function plumbing ──────────────────────────────────────────────────
 
@@ -33,6 +33,7 @@ export interface DocState {
   hiddenNav: string[];
   addedNav: AddedNavItem[];
   figmaBlocks: FigmaBlock[];
+  storybookBlocks: StorybookBlock[];
 }
 
 export const EMPTY_DOC_STATE: DocState = {
@@ -41,26 +42,47 @@ export const EMPTY_DOC_STATE: DocState = {
   hiddenNav: [],
   addedNav: [],
   figmaBlocks: [],
+  storybookBlocks: [],
 };
 
-export async function loadDocState(): Promise<DocState> {
-  if (!supabase) return EMPTY_DOC_STATE;
-
-  const { data, error } = await supabase
-    .from("doc_state")
-    .select("edits, hidden_toc, hidden_nav, added_nav, figma_blocks")
-    .eq("id", "global")
-    .single();
-
-  if (error || !data) return EMPTY_DOC_STATE;
-
+function mapDocRow(data: {
+  edits?: DocState["edits"];
+  hidden_toc?: string[];
+  hidden_nav?: string[];
+  added_nav?: AddedNavItem[];
+  figma_blocks?: FigmaBlock[];
+  storybook_blocks?: StorybookBlock[];
+}): DocState {
   return {
     edits: data.edits ?? {},
     hiddenToc: data.hidden_toc ?? [],
     hiddenNav: data.hidden_nav ?? [],
     addedNav: data.added_nav ?? [],
     figmaBlocks: data.figma_blocks ?? [],
+    storybookBlocks: data.storybook_blocks ?? [],
   };
+}
+
+export async function loadDocState(): Promise<DocState> {
+  if (!supabase) return EMPTY_DOC_STATE;
+
+  const full = await supabase
+    .from("doc_state")
+    .select("edits, hidden_toc, hidden_nav, added_nav, figma_blocks, storybook_blocks")
+    .eq("id", "global")
+    .single();
+
+  if (!full.error && full.data) return mapDocRow(full.data);
+
+  // Column missing until the storybook_blocks migration is applied.
+  const legacy = await supabase
+    .from("doc_state")
+    .select("edits, hidden_toc, hidden_nav, added_nav, figma_blocks")
+    .eq("id", "global")
+    .single();
+
+  if (legacy.error || !legacy.data) return EMPTY_DOC_STATE;
+  return mapDocRow(legacy.data);
 }
 
 export async function saveDocState(state: DocState): Promise<void> {
@@ -74,6 +96,7 @@ export async function saveDocState(state: DocState): Promise<void> {
       hidden_nav: state.hiddenNav,
       added_nav: state.addedNav,
       figma_blocks: state.figmaBlocks,
+      storybook_blocks: state.storybookBlocks,
     })
     .eq("id", "global");
 
