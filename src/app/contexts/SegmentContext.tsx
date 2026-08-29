@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { SEGMENTS, Segment } from "../components/segment-data";
+import { useLocation } from "react-router";
+import { DESIGN_SYSTEMS, matchDesignSystem } from "../../design-systems/catalog";
+import type { Segment } from "../components/segment-data";
 
 interface SegmentContextValue {
   activeSegment: Segment;
@@ -7,15 +9,24 @@ interface SegmentContextValue {
 }
 
 const SegmentContext = createContext<SegmentContextValue>({
-  activeSegment: SEGMENTS[0],
+  activeSegment: DESIGN_SYSTEMS[0],
   setActiveSegment: () => {},
 });
 
 export function SegmentProvider({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  const fromUrl = matchDesignSystem(pathname);
+
   const [activeSegment, setActiveSegmentState] = useState<Segment>(() => {
     const saved = localStorage.getItem("ds-active-segment");
-    return SEGMENTS.find(s => s.id === saved) ?? SEGMENTS[0];
+    return DESIGN_SYSTEMS.find(s => s.id === saved) ?? DESIGN_SYSTEMS[0];
   });
+
+  useEffect(() => {
+    if (!fromUrl) return;
+    setActiveSegmentState(fromUrl);
+    localStorage.setItem("ds-active-segment", fromUrl.id);
+  }, [fromUrl]);
 
   function setActiveSegment(segment: Segment) {
     setActiveSegmentState(segment);

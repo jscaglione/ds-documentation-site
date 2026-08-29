@@ -13,8 +13,7 @@ export function getDefaultStorybookOrigin(): string {
 }
 
 export function isComponentDocsPath(pathname: string): boolean {
-  if (pathname.startsWith("/components/")) return true;
-  return /^\/(mobile|marketing|data|internal)\/.+/.test(pathname);
+  return /(?:^|\/)components\//.test(pathname);
 }
 
 function stripSlashes(id: string): string {

@@ -68,7 +68,7 @@ export function SegmentLandingPage() {
             maxWidth: "52ch",
           }}
         >
-          {activeSegment.description}. Browse the sidebar to explore components, foundations, and guidelines specific to this platform.
+          {activeSegment.description}. Browse foundations, components, and the changelog for this design system.
         </p>
       </div>
 
