@@ -1,5 +1,8 @@
 import { ReactNode, useState } from "react";
+import { useLocation } from "react-router";
 import { EditableText } from "./EditableText";
+import { StorybookEmbedSection } from "./StorybookEmbedSection";
+import { isComponentDocsPath } from "../lib/storybook";
 
 interface DocPageProps {
   /** Stable slug used as the base for edit storage keys, e.g. "button". */
@@ -12,6 +15,7 @@ interface DocPageProps {
 }
 
 export function DocPage({ pageId, title, description, status, sourceLink, children }: DocPageProps) {
+  const { pathname } = useLocation();
   const statusColors: Record<string, { bg: string; text: string }> = {
     stable: { bg: "#E8F5EE", text: "#166534" },
     beta: { bg: "#FFF7ED", text: "#9A3412" },
@@ -95,7 +99,10 @@ export function DocPage({ pageId, title, description, status, sourceLink, childr
       </div>
 
       {/* Content */}
-      <div className="flex flex-col gap-12">{children}</div>
+      <div className="flex flex-col gap-12">
+        {isComponentDocsPath(pathname) && <StorybookEmbedSection />}
+        {children}
+      </div>
     </div>
   );
 }

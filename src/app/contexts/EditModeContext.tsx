@@ -38,6 +38,16 @@ export interface FigmaTextOverlay {
   letterSpacing?: number;   // em
 }
 
+export interface StorybookBlock {
+  id: string;
+  pageId: string;
+  origin: string;
+  storyId: string;
+  viewMode: "story" | "docs";
+  sourceUrl: string;
+  height: number;
+}
+
 export interface FigmaBlock {
   id: string;
   pageId: string;
@@ -89,6 +99,11 @@ interface EditModeContextValue {
   removeFigmaBlock: (id: string) => void;
   updateFigmaBlockHeight: (id: string, height: number) => void;
   updateFigmaBlock: (id: string, updates: Partial<FigmaBlock>) => void;
+  // Storybook embeds
+  storybookBlocks: StorybookBlock[];
+  addStorybookBlock: (pageId: string, block: Omit<StorybookBlock, "id" | "pageId" | "height"> & { height?: number }) => string;
+  removeStorybookBlock: (id: string) => void;
+  updateStorybookBlockHeight: (id: string, height: number) => void;
 }
 
 const EditModeContext = createContext<EditModeContextValue>({
@@ -116,6 +131,10 @@ const EditModeContext = createContext<EditModeContextValue>({
   removeFigmaBlock: () => {},
   updateFigmaBlockHeight: () => {},
   updateFigmaBlock: () => {},
+  storybookBlocks: [],
+  addStorybookBlock: () => "",
+  removeStorybookBlock: () => {},
+  updateStorybookBlockHeight: () => {},
 });
 
 export function EditModeProvider({ children }: { children: ReactNode }) {
@@ -143,6 +162,9 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   const [figmaBlocks, setFigmaBlocks] = useState<FigmaBlock[]>([]);
   const [savedFigmaBlocks, setSavedFigmaBlocks] = useState<FigmaBlock[]>([]);
 
+  const [storybookBlocks, setStorybookBlocks] = useState<StorybookBlock[]>([]);
+  const [savedStorybookBlocks, setSavedStorybookBlocks] = useState<StorybookBlock[]>([]);
+
   const applyState = useCallback((s: DocState) => {
     setEdits(s.edits);
     setSavedEdits(s.edits);
@@ -154,6 +176,8 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
     setSavedAddedNavItems(s.addedNav);
     setFigmaBlocks(s.figmaBlocks);
     setSavedFigmaBlocks(s.figmaBlocks);
+    setStorybookBlocks(s.storybookBlocks ?? []);
+    setSavedStorybookBlocks(s.storybookBlocks ?? []);
   }, []);
 
   useEffect(() => {
@@ -234,6 +258,36 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
     setFigmaBlocks(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
   }, []);
 
+  const addStorybookBlock = useCallback((
+    pageId: string,
+    block: Omit<StorybookBlock, "id" | "pageId" | "height"> & { height?: number },
+  ): string => {
+    const id = `storybook-${Date.now()}`;
+    setStorybookBlocks(prev => [...prev, {
+      id,
+      pageId,
+      origin: block.origin,
+      storyId: block.storyId,
+      viewMode: block.viewMode,
+      sourceUrl: block.sourceUrl,
+      height: block.height ?? 420,
+    }]);
+    return id;
+  }, []);
+
+  const removeStorybookBlock = useCallback((id: string) => {
+    setStorybookBlocks(prev => prev.filter(b => b.id !== id));
+    setEdits(prev => {
+      const next = { ...prev };
+      delete next[`storybook-caption-${id}`];
+      return next;
+    });
+  }, []);
+
+  const updateStorybookBlockHeight = useCallback((id: string, height: number) => {
+    setStorybookBlocks(prev => prev.map(b => b.id === id ? { ...b, height } : b));
+  }, []);
+
   const saveEdits = useCallback(() => {
     const snapshot: DocState = {
       edits,
@@ -241,6 +295,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
       hiddenNav: [...hiddenNavItems],
       addedNav: addedNavItems,
       figmaBlocks,
+      storybookBlocks,
     };
     setSaving(true);
     setSyncError(null);
@@ -251,10 +306,11 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
         setSavedHiddenNavItems(new Set(snapshot.hiddenNav));
         setSavedAddedNavItems([...snapshot.addedNav]);
         setSavedFigmaBlocks([...snapshot.figmaBlocks]);
+        setSavedStorybookBlocks([...snapshot.storybookBlocks]);
       })
       .catch(e => setSyncError(e instanceof Error ? e.message : "Save failed"))
       .finally(() => setSaving(false));
-  }, [edits, hiddenTocIds, hiddenNavItems, addedNavItems, figmaBlocks]);
+  }, [edits, hiddenTocIds, hiddenNavItems, addedNavItems, figmaBlocks, storybookBlocks]);
 
   const discardEdits = useCallback(() => {
     if (!isSupabaseConfigured) {
@@ -286,14 +342,17 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   const figmaUnsaved = figmaBlocks.length !== savedFigmaBlocks.length ||
     figmaBlocks.some((b, i) => b.height !== savedFigmaBlocks[i]?.height);
 
-  const hasUnsaved = textUnsaved || tocUnsaved || navHiddenUnsaved || navAddedUnsaved || figmaUnsaved;
+  const storybookUnsaved = JSON.stringify(storybookBlocks) !== JSON.stringify(savedStorybookBlocks);
+
+  const hasUnsaved = textUnsaved || tocUnsaved || navHiddenUnsaved || navAddedUnsaved || figmaUnsaved || storybookUnsaved;
 
   const editCount =
     Object.keys(edits).length +
     hiddenTocIds.size +
     hiddenNavItems.size +
     addedNavItems.length +
-    figmaBlocks.length;
+    figmaBlocks.length +
+    storybookBlocks.length;
 
   return (
     <EditModeContext.Provider
@@ -307,6 +366,7 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
         hiddenNavItems, hideNavItem,
         addedNavItems, addNavItem, removeAddedNavItem,
         figmaBlocks, addFigmaBlock, removeFigmaBlock, updateFigmaBlockHeight, updateFigmaBlock,
+        storybookBlocks, addStorybookBlock, removeStorybookBlock, updateStorybookBlockHeight,
       }}
     >
       {children}
