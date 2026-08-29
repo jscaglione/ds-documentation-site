@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+.claude/
+
+# Local Supabase credentials — never commit
+.env
+.env.local
+.env.*.local
+
+# Supabase CLI scratch state
+supabase/.branches/
+supabase/.temp/

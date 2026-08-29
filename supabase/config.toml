@@ -1,0 +1,10 @@
+project_id = "ds-documentation-site"
+
+[functions.figma-proxy]
+# Anonymous doc readers need component previews, so this function does its own
+# authorization: unauthenticated callers may only request Figma files that are
+# already referenced by a saved page. See functions/figma-proxy/index.ts.
+verify_jwt = false
+
+[functions.ai-generate]
+verify_jwt = true
