@@ -6,7 +6,8 @@ import {
 } from "lucide-react";
 import {
   listProfiles, updateProfile, inviteUser, deleteUser,
-  listCredentials, setCredential, revokeCredential, CredentialStatus,
+  listCredentials, setCredential, revokeCredential, createCredential, deleteCredential,
+  isBuiltinService, CredentialStatus,
 } from "../lib/api";
 import { Profile, UserRole } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -440,12 +441,14 @@ interface ApiKeyCardProps {
   status?: CredentialStatus;
   onSave: (v: string) => void;
   onRevoke: () => void;
+  onRemove?: () => void;
   placeholder?: string;
 }
 
-function ApiKeyCard({ icon, name, description, docsUrl, status, onSave, onRevoke, placeholder = "Paste your API key…" }: ApiKeyCardProps) {
+function ApiKeyCard({ icon, name, description, docsUrl, status, onSave, onRevoke, onRemove, placeholder = "Paste your API key…" }: ApiKeyCardProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [removing, setRemoving] = useState(false);
 
   const connected = !!status?.configured;
 
@@ -496,7 +499,7 @@ function ApiKeyCard({ icon, name, description, docsUrl, status, onSave, onRevoke
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {connected && !editing && (
+          {connected && !editing && !removing && (
             <>
               <button
                 onClick={() => { setDraft(""); setEditing(true); }}
@@ -516,7 +519,7 @@ function ApiKeyCard({ icon, name, description, docsUrl, status, onSave, onRevoke
               </button>
             </>
           )}
-          {!connected && !editing && (
+          {!connected && !editing && !removing && (
             <button
               onClick={() => { setDraft(""); setEditing(true); }}
               style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 500, color: "#fff", background: "var(--primary)", border: "none", borderRadius: "var(--radius)", cursor: "pointer", padding: "5px 14px" }}
@@ -525,6 +528,33 @@ function ApiKeyCard({ icon, name, description, docsUrl, status, onSave, onRevoke
             >
               Connect
             </button>
+          )}
+          {onRemove && !editing && !removing && (
+            <button
+              onClick={() => setRemoving(true)}
+              title="Remove application"
+              style={{ width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius)", cursor: "pointer", color: "var(--muted-foreground)", padding: 0 }}
+              onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "#FEE2E2"; el.style.borderColor = "#D4183D"; el.style.color = "#D4183D"; }}
+              onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = "none"; el.style.borderColor = "var(--border)"; el.style.color = "var(--muted-foreground)"; }}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+          {removing && (
+            <>
+              <button
+                onClick={() => { onRemove?.(); setRemoving(false); }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 600, color: "#fff", background: "#D4183D", border: "none", borderRadius: "var(--radius)", cursor: "pointer", padding: "5px 12px" }}
+              >
+                Remove
+              </button>
+              <button
+                onClick={() => setRemoving(false)}
+                style={{ width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--muted)", border: "none", borderRadius: "var(--radius)", cursor: "pointer", color: "var(--muted-foreground)", padding: 0 }}
+              >
+                <X size={13} />
+              </button>
+            </>
           )}
           {editing && (
             <button
@@ -609,10 +639,22 @@ function OpenAiIcon() {
   );
 }
 
+function AppIcon({ name }: { name: string }) {
+  return (
+    <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.9375rem", fontWeight: 700, color: avatarColor(name) }}>
+      {(name[0] ?? "?").toUpperCase()}
+    </span>
+  );
+}
+
 function ApiKeysTab() {
   const [creds, setCreds] = useState<Record<string, CredentialStatus>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [newDraft, setNewDraft] = useState({ label: "", secret: "", description: "" });
+  const addNameRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -625,6 +667,16 @@ function ApiKeysTab() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const customApps = Object.values(creds)
+    .filter(c => !isBuiltinService(c.service))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const inputStyle: React.CSSProperties = {
+    fontFamily: "var(--font-sans)", fontSize: "0.8125rem", padding: "7px 10px",
+    border: "1px solid var(--border)", borderRadius: "var(--radius)",
+    background: "var(--card)", color: "var(--foreground)", outline: "none", width: "100%",
+  };
 
   async function save(service: string, secret: string) {
     setError(null);
@@ -646,11 +698,154 @@ function ApiKeysTab() {
     }
   }
 
-  if (loading) return <Spinner />;
+  const canAdd = Boolean(newDraft.label.trim() && newDraft.secret.trim());
+
+  async function addApplication() {
+    if (!canAdd || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createCredential({
+        label: newDraft.label,
+        secret: newDraft.secret,
+        description: newDraft.description,
+        existing: Object.keys(creds),
+      });
+      setNewDraft({ label: "", secret: "", description: "" });
+      setAdding(false);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the API key");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeApplication(service: string) {
+    setError(null);
+    try {
+      await deleteCredential(service);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove the application");
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+
+      {/* Custom integrations */}
+      <section>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h2 style={{ fontFamily: "var(--font-sans)", fontSize: "0.6875rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted-foreground)", margin: "0 0 2px" }}>
+              Add an integration
+            </h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.8125rem", color: "var(--muted-foreground)", margin: 0 }}>
+              Name the service and paste its API key. Built-in Figma and AI keys are listed below.
+            </p>
+          </div>
+          {!adding && (
+            <button
+              onClick={() => { setAdding(true); setTimeout(() => addNameRef.current?.focus(), 50); }}
+              className="flex items-center gap-1.5 px-3 h-9"
+              style={{ fontFamily: "var(--font-sans)", fontSize: "0.8125rem", fontWeight: 500, color: "#fff", background: "var(--primary)", border: "none", borderRadius: "var(--radius)", cursor: "pointer", flexShrink: 0 }}
+              onMouseEnter={e => (e.currentTarget.style.background = "#2034CC")}
+              onMouseLeave={e => (e.currentTarget.style.background = "var(--primary)")}
+            >
+              <Plus size={14} /> Add integration
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          {adding && (
+            <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", background: "var(--card)" }}>
+              <div className="flex items-start gap-4 p-5">
+                <div
+                  style={{ width: "40px", height: "40px", borderRadius: "10px", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: "var(--muted)" }}
+                >
+                  <AppIcon name={newDraft.label || "A"} />
+                </div>
+                <div className="flex flex-col gap-3" style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    ref={addNameRef}
+                    value={newDraft.label}
+                    onChange={e => setNewDraft(d => ({ ...d, label: e.target.value }))}
+                    placeholder="Integration name (e.g. Linear)"
+                    onKeyDown={e => { if (e.key === "Enter") void addApplication(); if (e.key === "Escape") setAdding(false); }}
+                    style={inputStyle}
+                  />
+                  <input
+                    type="password"
+                    value={newDraft.secret}
+                    onChange={e => setNewDraft(d => ({ ...d, secret: e.target.value }))}
+                    placeholder="Paste API key"
+                    onKeyDown={e => { if (e.key === "Enter") void addApplication(); if (e.key === "Escape") setAdding(false); }}
+                    style={{ ...inputStyle, fontFamily: "var(--font-mono)" }}
+                  />
+                  <input
+                    value={newDraft.description}
+                    onChange={e => setNewDraft(d => ({ ...d, description: e.target.value }))}
+                    placeholder="What this key is used for (optional)"
+                    onKeyDown={e => { if (e.key === "Enter") void addApplication(); if (e.key === "Escape") setAdding(false); }}
+                    style={inputStyle}
+                  />
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => void addApplication()}
+                    disabled={!canAdd || busy}
+                    style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", fontWeight: 500, color: "#fff", background: canAdd ? "var(--primary)" : "var(--muted-foreground)", border: "none", borderRadius: "var(--radius)", cursor: canAdd ? "pointer" : "default", padding: "5px 14px" }}
+                  >
+                    {busy ? "Adding…" : "Add integration"}
+                  </button>
+                  <button
+                    onClick={() => { setAdding(false); setNewDraft({ label: "", secret: "", description: "" }); }}
+                    style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "var(--muted-foreground)", background: "none", border: "none", cursor: "pointer", padding: "5px 8px" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {loading && <Spinner />}
+          {!loading && customApps.map(app => (
+            <ApiKeyCard
+              key={app.service}
+              icon={<AppIcon name={app.label} />}
+              name={app.label}
+              description={app.description || `Custom application (${app.service})`}
+              docsUrl={app.docs_url || undefined}
+              status={app}
+              onSave={v => void save(app.service, v)}
+              onRevoke={() => void revoke(app.service)}
+              onRemove={() => void removeApplication(app.service)}
+            />
+          ))}
+
+          {!loading && !adding && customApps.length === 0 && (
+            <button
+              onClick={() => { setAdding(true); setTimeout(() => addNameRef.current?.focus(), 50); }}
+              className="flex flex-col items-center gap-2 py-10 w-full"
+              style={{ border: "1px dashed var(--border)", borderRadius: "var(--radius)", background: "var(--card)", cursor: "pointer" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--muted)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "var(--card)")}
+            >
+              <Key size={22} style={{ color: "var(--muted-foreground)", opacity: 0.45 }} />
+              <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.875rem", fontWeight: 500, color: "var(--foreground)", margin: 0 }}>
+                Add integration
+              </p>
+              <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.8125rem", color: "var(--muted-foreground)", margin: 0 }}>
+                Name the service and paste its API key
+              </p>
+            </button>
+          )}
+        </div>
+      </section>
 
       {/* Design Tools */}
       <section>
@@ -718,7 +913,8 @@ function ApiKeysTab() {
           Keys are stored in Supabase and are write-only: once saved, the value is never sent back to
           any browser — only the last four characters are shown. Requests to Figma and Anthropic are
           made by Edge Functions on the server, so the key is never exposed to page visitors. Revoking
-          clears the stored value immediately.
+          clears the stored value immediately. Custom applications can be removed entirely; built-in
+          integrations cannot.
         </p>
       </div>
     </div>
@@ -728,8 +924,8 @@ function ApiKeysTab() {
 // ─── Tab definitions ─────────────────────────────────────────────────────────
 
 const TABS = [
+  { id: "apikeys", label: "Integrations", icon: Key   },
   { id: "users",   label: "Users",    icon: Users },
-  { id: "apikeys", label: "API Keys", icon: Key   },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -737,7 +933,7 @@ type TabId = typeof TABS[number]["id"];
 // ─── Admin Page ───────────────────────────────────────────────────────────────
 
 export function AdminPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("users");
+  const [activeTab, setActiveTab] = useState<TabId>("apikeys");
 
   return (
     <div style={{ minHeight: "calc(100vh - 56px)", background: "var(--background)" }}>
@@ -756,7 +952,7 @@ export function AdminPage() {
             </Link>
             <ChevronRight size={12} style={{ color: "var(--muted-foreground)" }} />
             <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8125rem", color: "var(--foreground)", fontWeight: 500 }}>
-              Administration
+              Settings
             </span>
           </div>
 
@@ -769,10 +965,10 @@ export function AdminPage() {
             </div>
             <div>
               <h1 style={{ fontFamily: "var(--font-sans)", fontSize: "1.25rem", fontWeight: 700, color: "var(--foreground)", margin: 0, letterSpacing: "-0.02em" }}>
-                Administration
+                Settings
               </h1>
               <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.8125rem", color: "var(--muted-foreground)", margin: 0 }}>
-                Manage users, roles, and service integrations
+                Add API integrations, manage keys, users, and roles
               </p>
             </div>
           </div>

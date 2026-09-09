@@ -304,7 +304,7 @@ function NeedsFigmaKey({ isAdmin, compact = false }: { isAdmin: boolean; compact
           Connect one in Administration →
         </Link>
       ) : (
-        "Ask an admin to add one under Administration → API Keys."
+        "Ask an admin to add one under Settings → Integrations."
       )}
     </p>
   );
@@ -991,7 +991,7 @@ function AiDocSection({ block }: { block: FigmaBlock }) {
                 Connect one in Administration →
               </Link>
             ) : (
-              "Ask an admin to add one under Administration → API Keys."
+              "Ask an admin to add one under Settings → Integrations."
             )}
           </p>
         </div>
