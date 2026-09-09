@@ -164,13 +164,16 @@ export function TopBar({ onMobileMenuToggle, isMobileMenuOpen }: TopBarProps) {
           className="hidden sm:block"
         />
 
-        {/* Admin link — admins only */}
+        {/* Settings — admins only */}
         {isAdminUser && (
           <Link
             to="/admin"
-            title="Administration"
-            className="w-8 h-8 flex items-center justify-center transition-colors duration-100"
+            title="Settings"
+            className="flex items-center gap-1.5 h-8 px-2 no-underline transition-colors duration-100"
             style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "0.75rem",
+              fontWeight: isAdmin ? 600 : 500,
               color: isAdmin ? "var(--primary)" : "var(--muted-foreground)",
               borderRadius: "var(--radius)",
               background: isAdmin ? "color-mix(in srgb,var(--primary) 10%,transparent)" : "transparent",
@@ -179,6 +182,7 @@ export function TopBar({ onMobileMenuToggle, isMobileMenuOpen }: TopBarProps) {
             onMouseLeave={e => { if (!isAdmin) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
           >
             <Settings size={15} />
+            <span className="hidden lg:inline">Settings</span>
           </Link>
         )}
 
