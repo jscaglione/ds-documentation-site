@@ -138,22 +138,72 @@ export function deleteUser(id: string) {
 
 // ─── Service credentials ─────────────────────────────────────────────────────
 
+export const BUILTIN_SERVICES = ["figma", "anthropic", "openai"] as const;
+export type BuiltinService = (typeof BUILTIN_SERVICES)[number];
+
+const BUILTIN_SERVICE_SET = new Set<string>(BUILTIN_SERVICES);
+const RESERVED_SERVICES = new Set<string>([...BUILTIN_SERVICES, "supabase"]);
+
+export function isBuiltinService(service: string): boolean {
+  return BUILTIN_SERVICE_SET.has(service);
+}
+
+export function slugifyService(name: string): string {
+  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
 export interface CredentialStatus {
   service: string;
   last4: string;
   configured: boolean;
   updated_at: string;
+  label: string;
+  description: string;
+  docs_url: string;
+}
+
+type CredentialRow = {
+  service: string;
+  last4: string;
+  configured: boolean;
+  updated_at: string;
+  label?: string;
+  description?: string;
+  docs_url?: string;
+};
+
+function mapCredential(row: CredentialRow): CredentialStatus {
+  return {
+    service: row.service,
+    last4: row.last4,
+    configured: row.configured,
+    updated_at: row.updated_at,
+    label: row.label || row.service,
+    description: row.description ?? "",
+    docs_url: row.docs_url ?? "",
+  };
 }
 
 export async function listCredentials(): Promise<Record<string, CredentialStatus>> {
   if (!supabase) return {};
-  const { data, error } = await supabase
+
+  const full = await supabase
     .from("service_credentials")
-    .select("service, last4, configured, updated_at");
-  if (error) throw new Error(error.message);
+    .select("service, last4, configured, updated_at, label, description, docs_url");
+
+  const result = !full.error
+    ? full
+    : await supabase
+        .from("service_credentials")
+        .select("service, last4, configured, updated_at");
+
+  if (result.error) throw new Error(result.error.message);
 
   return Object.fromEntries(
-    (data ?? []).map(row => [row.service, row as CredentialStatus]),
+    (result.data ?? []).map(row => {
+      const mapped = mapCredential(row as CredentialRow);
+      return [mapped.service, mapped];
+    }),
   );
 }
 
@@ -168,6 +218,60 @@ export async function setCredential(service: string, secret: string): Promise<vo
 
 export function revokeCredential(service: string) {
   return setCredential(service, "");
+}
+
+export async function createCredential(input: {
+  label: string;
+  secret?: string;
+  description?: string;
+  docsUrl?: string;
+  existing?: Iterable<string>;
+}): Promise<string> {
+  if (!supabase) throw new Error("Supabase is not configured");
+
+  const label = input.label.trim();
+  if (!label) throw new Error("Give the application a name");
+
+  const service = slugifyService(label);
+  if (!service) throw new Error("Use a name with letters or numbers");
+  if (RESERVED_SERVICES.has(service)) {
+    throw new Error(`“${service}” is reserved. Pick a different name.`);
+  }
+  if (input.existing && [...input.existing].includes(service)) {
+    throw new Error(`An application named “${service}” already exists`);
+  }
+
+  const secret = input.secret?.trim() ?? "";
+  const { error } = await supabase.from("service_credentials").insert({
+    service,
+    secret,
+    last4: secret.slice(-4),
+    label,
+    description: input.description?.trim() ?? "",
+    docs_url: input.docsUrl?.trim() ?? "",
+  });
+  if (error) {
+    if (/column|schema cache|does not exist/i.test(error.message)) {
+      throw new Error("Apply the latest migration (supabase db push) to add custom applications");
+    }
+    if (error.code === "23505") {
+      throw new Error(`An application named “${service}” already exists`);
+    }
+    throw new Error(error.message);
+  }
+  return service;
+}
+
+export async function deleteCredential(service: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase is not configured");
+  if (isBuiltinService(service)) {
+    throw new Error("Built-in integrations cannot be removed");
+  }
+  const { error } = await supabase
+    .from("service_credentials")
+    .delete()
+    .eq("service", service);
+  if (error) throw new Error(error.message);
 }
 
 // ─── Figma (via the figma-proxy Edge Function) ───────────────────────────────
